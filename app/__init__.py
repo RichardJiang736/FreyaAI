@@ -1,0 +1,44 @@
+import os
+from flask import Flask
+from .extensions import db, migrate
+from .main import main as main_blueprint
+from .utils import init_app
+from flask_cors import CORS
+
+def create_app(config_name='development'):
+    base_dir = os.path.abspath(os.path.dirname(__file__))
+    static_folder = os.path.join(base_dir, '..', 'public')
+
+    app = Flask(__name__, instance_relative_config=True, static_folder=static_folder, static_url_path='/static')
+    app.config.from_object(f'app.config.{config_name.capitalize()}Config')
+    app.config['SESSION_COOKIE_SECURE'] = False
+    app.config['SESSION_COOKIE_HTTPONLY'] = True
+    app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # Changed from default to support cross-origin requests
+
+    app.config['SPOTIFY_SCOPES'] = os.environ.get('SPOTIFY_SCOPES')
+    app.config['SPOTIFY_CLIENT_ID'] = os.environ.get('SPOTIFY_CLIENT_ID')
+    app.config['SPOTIFY_CLIENT_SECRET'] = os.environ.get('SPOTIFY_CLIENT_SECRET')
+    app.config['SPOTIFY_REDIRECT_URI'] = os.environ.get('SPOTIFY_REDIRECT_URI')
+
+    app.config['GENRES_PATH'] = init_app(app=app)
+
+    # Configure CORS to allow credentials and specify origins
+    CORS(app, 
+         resources={r"/api/*": {
+             "origins": os.environ.get("NEXTJS_FRONTEND_URL", "http://localhost:3000"),
+             "supports_credentials": True
+         }},
+         supports_credentials=True)
+
+    try:
+        os.makedirs(app.instance_path)
+    except OSError:
+        pass
+
+    db.init_app(app)
+    migrate.init_app(app, db)
+    app.register_blueprint(main_blueprint)
+
+    with app.app_context():
+        db.create_all()
+    return app
